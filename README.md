@@ -123,7 +123,94 @@ vllm        4   lws          leaderworkerset.x-k8s.io/v1
 train    8192   js           jobset.xk8s.io/v1
 ```
 
-## 6. Example Workflow
+## 6. Development and Deployment
+
+This project is built using the [Kubebuilder](https://book.kubebuilder.io/) framework. The following instructions assume you have a working Go environment and a Kubernetes cluster to deploy to.
+
+### Prerequisites
+
+- [Go](https://golang.org/doc/install) (version 1.21 or higher)
+- [Docker](https://docs.docker.com/get-docker/)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+- [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (for local testing)
+
+### CRD Management
+
+The Custom Resource Definitions (CRDs) are generated from the Go types in `api/v1alpha1/`.
+
+- **Generate CRDs:** To update the CRD manifests in `config/crd/bases`, run:
+  ```bash
+  make manifests
+  ```
+
+- **Install CRDs:** To install the CRDs into your connected Kubernetes cluster, run:
+  ```bash
+  make install
+  ```
+
+- **Uninstall CRDs:** To remove the CRDs from your cluster, run:
+  ```bash
+  make uninstall
+  ```
+
+### Controller Management
+
+The controller logic is located in `internal/controller/`.
+
+- **Build the Controller:** To build the controller manager binary, run:
+  ```bash
+  make build
+  ```
+  The binary will be located at `bin/manager`.
+
+- **Run the Controller Locally:** To run the controller on your local machine against your connected Kubernetes cluster, run:
+  ```bash
+  make run
+  ```
+
+- **Build the Docker Image:** To build the controller Docker image, run:
+  ```bash
+  make docker-build IMG=<some-registry>/node-workload-summary:tag
+  ```
+
+- **Deploy the Controller:** To deploy the controller to your connected Kubernetes cluster, first push the image to a registry and then run:
+  ```bash
+  make deploy IMG=<some-registry>/node-workload-summary:tag
+  ```
+
+- **Undeploy the Controller:** To remove the controller from your cluster, run:
+  ```bash
+  make undeploy
+  ```
+
+### Verifying the API
+
+You can verify that the extension API is working by creating the sample resources from the `test/manifests` directory.
+
+1. **Deploy a sample workload:**
+   ```bash
+   kubectl apply -f test/manifests/deployment.yaml
+   ```
+
+2. **Create a NodeSummarizer:** This will group nodes by their hostname.
+   ```bash
+   kubectl apply -f test/manifests/nodesummarizer.yaml
+   ```
+   After a few moments, you should see `NodeSummary` resources created for each node in your cluster.
+   ```bash
+   kubectl get nodesummaries
+   ```
+
+3. **Create a WorkloadSummarizer:** This will summarize `Deployment` resources.
+   ```bash
+   kubectl apply -f test/manifests/workloadsummarizer.yaml
+   ```
+   After a few moments, you should see a `WorkloadSummary` for the `nginx-deployment` you created in step 1.
+   ```bash
+   kubectl get workloadsummaries
+   ```
+
+## 7. Example Workflow
 
 1.  **Admin sets up summarization:** The cluster administrator creates a `NodeSummarizer` to group nodes by a label and a `WorkloadSummarizer` to track specific workload types.
 2.  **Controller Action (Nodes):** The `nodesummarizer-controller` discovers all nodes and creates `NodeSummary` objects for each group.
