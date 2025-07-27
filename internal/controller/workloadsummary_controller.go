@@ -21,10 +21,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,7 +45,7 @@ type WorkloadSummaryReconciler struct {
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ux.sean.example.com,resources=workloadsummarizers,verbs=get;list;watch
 
 func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -83,31 +81,20 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	workloadSummary.Status.PodCount = len(ownedPods)
 
-	nodeSummaryRefs := make(map[string]int)
-	for _, pod := range ownedPods {
-		if pod.Spec.NodeName != "" {
-			var node corev1.Node
-			if err := r.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, &node); err == nil {
-				var nodeSummaries uxv1alpha1.NodeSummaryList
-				if err := r.List(ctx, &nodeSummaries); err == nil {
-					for _, ns := range nodeSummaries.Items {
-						selector, _ := metav1.LabelSelectorAsSelector(ns.Spec.Selector)
-						if selector.Matches(labels.Set(node.GetLabels())) {
-							nodeSummaryRefs[ns.Name]++
-						}
-					}
-				}
+	var summarizerList uxv1alpha1.WorkloadSummarizerList
+	if err := r.List(ctx, &summarizerList); err != nil {
+		log.Error(err, "unable to list WorkloadSummarizers")
+		return ctrl.Result{}, err
+	}
+
+	if len(summarizerList.Items) > 0 {
+		summarizer := summarizerList.Items[0]
+		for _, wt := range summarizer.Spec.WorkloadTypes {
+			if wt.Kind == "Deployment" {
+				workloadSummary.Status.ShortType = "dep"
+				workloadSummary.Status.LongType = "apps/v1.Deployment"
 			}
 		}
-	}
-	log.Info("Found node summaries", "count", len(nodeSummaryRefs))
-
-	workloadSummary.Status.NodeSummaryRefs = make([]uxv1alpha1.NodeSummaryRef, 0, len(nodeSummaryRefs))
-	for name, count := range nodeSummaryRefs {
-		workloadSummary.Status.NodeSummaryRefs = append(workloadSummary.Status.NodeSummaryRefs, uxv1alpha1.NodeSummaryRef{
-			Name:      name,
-			NodeCount: count,
-		})
 	}
 
 	if err := r.Status().Update(ctx, &workloadSummary); err != nil {
@@ -132,40 +119,23 @@ func (r *WorkloadSummaryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *WorkloadSummaryReconciler) findWorkloadSummariesForPod(ctx context.Context, pod client.Object) []reconcile.Request {
-	log := log.FromContext(ctx)
-	var summarizerList uxv1alpha1.WorkloadSummarizerList
-	if err := r.List(ctx, &summarizerList); err != nil {
-		log.Error(err, "unable to list WorkloadSummarizers")
+	var summaries uxv1alpha1.WorkloadSummaryList
+	if err := r.List(ctx, &summaries, client.InNamespace(pod.GetNamespace())); err != nil {
 		return []reconcile.Request{}
 	}
 
-	if len(summarizerList.Items) == 0 {
-		return []reconcile.Request{}
-	}
-
-	workloadTypes := make(map[schema.GroupKind]bool)
-	for _, summarizer := range summarizerList.Items {
-		for _, wt := range summarizer.Spec.WorkloadTypes {
-			workloadTypes[schema.GroupKind{Group: wt.Group, Kind: wt.Kind}] = true
+	requests := make([]reconcile.Request, 0)
+	for _, summary := range summaries.Items {
+		for _, ownerRef := range pod.GetOwnerReferences() {
+			if ownerRef.Name == summary.Name {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      summary.Name,
+						Namespace: summary.Namespace,
+					},
+				})
+			}
 		}
 	}
-
-	rootWorkload, err := FindRootWorkload(ctx, r.Client, pod, workloadTypes)
-	if err != nil {
-		log.Error(err, "unable to find root workload for pod", "pod", pod.GetName())
-		return []reconcile.Request{}
-	}
-
-	if rootWorkload == nil || rootWorkload.GetUID() == pod.GetUID() {
-		return []reconcile.Request{}
-	}
-
-	return []reconcile.Request{
-		{
-			NamespacedName: types.NamespacedName{
-				Name:      rootWorkload.GetName(),
-				Namespace: rootWorkload.GetNamespace(),
-			},
-		},
-	}
+	return requests
 }

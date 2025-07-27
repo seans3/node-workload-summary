@@ -374,6 +374,23 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, workloadSummary)).To(Succeed())
+
+			By("creating a WorkloadSummarizer")
+			workloadSummarizer := &uxv1alpha1.WorkloadSummarizer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-summarizer",
+					Namespace: "default",
+				},
+				Spec: uxv1alpha1.WorkloadSummarizerSpec{
+					WorkloadTypes: []uxv1alpha1.WorkloadType{
+						{
+							Group: "apps",
+							Kind:  "Deployment",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, workloadSummarizer)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -403,6 +420,8 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 				}
 				return workloadSummary.Status.PodCount, nil
 			}, "10s", "1s").Should(Equal(3))
+			Expect(workloadSummary.Status.ShortType).To(Equal("dep"))
+			Expect(workloadSummary.Status.LongType).To(Equal("apps/v1.Deployment"))
 		})
 	})
 })

@@ -295,6 +295,16 @@ var _ = Describe("Manager", Ordered, func() {
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("3"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-deployment", "-o", "jsonpath={.status.shortType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("dep"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-deployment", "-o", "jsonpath={.status.longType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("apps/v1.Deployment"))
 			}
 			Eventually(verifyWorkloadSummary).Should(Succeed())
 		})
