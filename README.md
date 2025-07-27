@@ -210,6 +210,18 @@ You can verify that the extension API is working by creating the sample resource
    kubectl get workloadsummaries
    ```
 
+### Running Tests
+
+- **Unit Tests:** To run the unit tests, use the following command:
+  ```bash
+  make test
+  ```
+
+- **End-to-End (e2e) Tests:** The e2e tests require a running Kubernetes cluster. You can use Kind to create a local cluster.
+  ```bash
+  make test-e2e
+  ```
+
 ## 7. Example Workflow
 
 1.  **Admin sets up summarization:** The cluster administrator creates a `NodeSummarizer` to group nodes by a label and a `WorkloadSummarizer` to track specific workload types.
