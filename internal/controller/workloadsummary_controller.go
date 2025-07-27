@@ -9,7 +9,7 @@ You may obtain a copy of the License at
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+WITHOUTHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
@@ -19,10 +19,12 @@ package controller
 import (
 	"context"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,28 +46,40 @@ type WorkloadSummaryReconciler struct {
 //+kubebuilder:rbac:groups=ux.sean.example.com,resources=workloadsummaries/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
 func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	log.Info("Reconciling WorkloadSummary", "request", req)
 
 	var workloadSummary uxv1alpha1.WorkloadSummary
 	if err := r.Get(ctx, req.NamespacedName, &workloadSummary); err != nil {
+		log.Error(err, "unable to fetch WorkloadSummary")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	var pods corev1.PodList
-	if err := r.List(ctx, &pods, client.InNamespace(req.Namespace)); err != nil {
+	var replicaSets appsv1.ReplicaSetList
+	if err := r.List(ctx, &replicaSets, client.InNamespace(req.Namespace)); err != nil {
+		log.Error(err, "unable to list replica sets")
 		return ctrl.Result{}, err
 	}
 
 	var ownedPods []corev1.Pod
-	for _, pod := range pods.Items {
-		for _, ownerRef := range pod.OwnerReferences {
-			if ownerRef.Name == workloadSummary.Name {
-				ownedPods = append(ownedPods, pod)
+	for _, rs := range replicaSets.Items {
+		for _, ownerRef := range rs.OwnerReferences {
+			if ownerRef.Name == workloadSummary.Name && ownerRef.Kind == "Deployment" {
+				var pods corev1.PodList
+				podSelector := labels.SelectorFromSet(rs.Spec.Selector.MatchLabels)
+				if err := r.List(ctx, &pods, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: podSelector}); err != nil {
+					log.Error(err, "unable to list pods")
+					return ctrl.Result{}, err
+				}
+				ownedPods = append(ownedPods, pods.Items...)
 			}
 		}
 	}
+	log.Info("Found owned pods", "count", len(ownedPods))
 
 	workloadSummary.Status.PodCount = len(ownedPods)
 
@@ -86,6 +100,7 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 	}
+	log.Info("Found node summaries", "count", len(nodeSummaryRefs))
 
 	workloadSummary.Status.NodeSummaryRefs = make([]uxv1alpha1.NodeSummaryRef, 0, len(nodeSummaryRefs))
 	for name, count := range nodeSummaryRefs {
@@ -96,6 +111,7 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if err := r.Status().Update(ctx, &workloadSummary); err != nil {
+		log.Error(err, "unable to update WorkloadSummary status")
 		return ctrl.Result{}, err
 	}
 
@@ -116,23 +132,40 @@ func (r *WorkloadSummaryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *WorkloadSummaryReconciler) findWorkloadSummariesForPod(ctx context.Context, pod client.Object) []reconcile.Request {
-	var summaries uxv1alpha1.WorkloadSummaryList
-	if err := r.List(ctx, &summaries, client.InNamespace(pod.GetNamespace())); err != nil {
+	log := log.FromContext(ctx)
+	var summarizerList uxv1alpha1.WorkloadSummarizerList
+	if err := r.List(ctx, &summarizerList); err != nil {
+		log.Error(err, "unable to list WorkloadSummarizers")
 		return []reconcile.Request{}
 	}
 
-	requests := make([]reconcile.Request, 0)
-	for _, summary := range summaries.Items {
-		for _, ownerRef := range pod.GetOwnerReferences() {
-			if ownerRef.Name == summary.Name {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      summary.Name,
-						Namespace: summary.Namespace,
-					},
-				})
-			}
+	if len(summarizerList.Items) == 0 {
+		return []reconcile.Request{}
+	}
+
+	workloadTypes := make(map[schema.GroupKind]bool)
+	for _, summarizer := range summarizerList.Items {
+		for _, wt := range summarizer.Spec.WorkloadTypes {
+			workloadTypes[schema.GroupKind{Group: wt.Group, Kind: wt.Kind}] = true
 		}
 	}
-	return requests
+
+	rootWorkload, err := FindRootWorkload(ctx, r.Client, pod, workloadTypes)
+	if err != nil {
+		log.Error(err, "unable to find root workload for pod", "pod", pod.GetName())
+		return []reconcile.Request{}
+	}
+
+	if rootWorkload == nil || rootWorkload.GetUID() == pod.GetUID() {
+		return []reconcile.Request{}
+	}
+
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Name:      rootWorkload.GetName(),
+				Namespace: rootWorkload.GetNamespace(),
+			},
+		},
+	}
 }

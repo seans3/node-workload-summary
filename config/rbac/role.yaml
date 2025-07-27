@@ -14,12 +14,20 @@ rules:
   - list
   - watch
 - apiGroups:
+  - apps
+  resources:
+  - deployments
+  - replicasets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - ux.sean.example.com
   resources:
   - nodesummaries
   - nodesummarizers
   - workloadsummaries
-  - workloadsummarizers
   verbs:
   - create
   - delete
@@ -34,7 +42,6 @@ rules:
   - nodesummaries/finalizers
   - nodesummarizers/finalizers
   - workloadsummaries/finalizers
-  - workloadsummarizers/finalizers
   verbs:
   - update
 - apiGroups:
@@ -43,8 +50,15 @@ rules:
   - nodesummaries/status
   - nodesummarizers/status
   - workloadsummaries/status
-  - workloadsummarizers/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - ux.sean.example.com
+  resources:
+  - workloadsummarizers
+  verbs:
+  - get
+  - list
+  - watch

@@ -43,14 +43,17 @@ type NodeSummarizerReconciler struct {
 
 func (r *NodeSummarizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	log.Info("Reconciling NodeSummarizer", "request", req)
 
 	var nodeSummarizer uxv1alpha1.NodeSummarizer
 	if err := r.Get(ctx, req.NamespacedName, &nodeSummarizer); err != nil {
+		log.Error(err, "unable to fetch NodeSummarizer")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	var nodes corev1.NodeList
 	if err := r.List(ctx, &nodes); err != nil {
+		log.Error(err, "unable to list nodes")
 		return ctrl.Result{}, err
 	}
 
@@ -60,6 +63,7 @@ func (r *NodeSummarizerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			nodesByLabelValue[labelValue] = append(nodesByLabelValue[labelValue], node)
 		}
 	}
+	log.Info("Grouped nodes by label", "label", nodeSummarizer.Spec.LabelKey, "groups", len(nodesByLabelValue))
 
 	for labelValue, nodesInGroup := range nodesByLabelValue {
 		nodeSummaryName := fmt.Sprintf("%s-%s", nodeSummarizer.Name, labelValue)
@@ -70,10 +74,12 @@ func (r *NodeSummarizerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		if err := ctrl.SetControllerReference(&nodeSummarizer, nodeSummary, r.Scheme); err != nil {
+			log.Error(err, "unable to set controller reference")
 			return ctrl.Result{}, err
 		}
 
 		op, err := ctrl.CreateOrUpdate(ctx, r.Client, nodeSummary, func() error {
+			log.Info("Setting NodeSummary spec and status", "name", nodeSummary.Name)
 			nodeSummary.Spec.Selector = &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					nodeSummarizer.Spec.LabelKey: labelValue,
@@ -84,6 +90,7 @@ func (r *NodeSummarizerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return nil
 		})
 		if err != nil {
+			log.Error(err, "unable to create or update NodeSummary")
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciled NodeSummary", "operation", op, "name", nodeSummary.Name)

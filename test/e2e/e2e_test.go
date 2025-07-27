@@ -49,8 +49,16 @@ var _ = Describe("Manager", Ordered, func() {
 	// enforce the restricted security policy to the namespace, installing CRDs,
 	// and deploying the controller.
 	BeforeAll(func() {
+		By("deleting the manager namespace if it exists")
+		cmd := exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found")
+		_, _ = utils.Run(cmd)
+
+		By("deleting the metrics ClusterRoleBinding if it exists")
+		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
+		_, _ = utils.Run(cmd)
+
 		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
+		cmd = exec.Command("kubectl", "create", "ns", namespace)
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
@@ -267,6 +275,29 @@ var _ = Describe("Manager", Ordered, func() {
 		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
 		//    strings.ToLower(<Kind>),
 		// ))
+	})
+
+	Context("WorkloadSummary", func() {
+		It("should be created for a new Deployment", func() {
+			By("creating a WorkloadSummarizer to track Deployments")
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating an nginx Deployment")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/deployment.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the WorkloadSummary is created")
+			verifyWorkloadSummary := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "workloadsummary", "nginx-deployment", "-o", "jsonpath={.status.podCount}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("3"))
+			}
+			Eventually(verifyWorkloadSummary).Should(Succeed())
+		})
 	})
 })
 

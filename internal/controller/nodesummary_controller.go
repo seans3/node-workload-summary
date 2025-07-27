@@ -20,8 +20,8 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,25 +46,31 @@ type NodeSummaryReconciler struct {
 
 func (r *NodeSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	log.Info("Reconciling NodeSummary", "request", req)
 
 	var nodeSummary uxv1alpha1.NodeSummary
 	if err := r.Get(ctx, req.NamespacedName, &nodeSummary); err != nil {
+		log.Error(err, "unable to fetch NodeSummary")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	var nodes corev1.NodeList
 	selector, err := metav1.LabelSelectorAsSelector(nodeSummary.Spec.Selector)
 	if err != nil {
+		log.Error(err, "unable to convert selector")
 		return ctrl.Result{}, err
 	}
 	if err := r.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		log.Error(err, "unable to list nodes")
 		return ctrl.Result{}, err
 	}
 
+	log.Info("Found nodes for NodeSummary", "count", len(nodes.Items))
 	nodeSummary.Status.NodeCount = len(nodes.Items)
 	// TODO: aggregate other status fields
 
 	if err := r.Status().Update(ctx, &nodeSummary); err != nil {
+		log.Error(err, "unable to update NodeSummary status")
 		return ctrl.Result{}, err
 	}
 
