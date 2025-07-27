@@ -1,0 +1,27 @@
+# This rule is not used by the project node-workload-summary itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants full permissions ('*') over ux.sean.example.com.
+# This role is intended for users authorized to modify roles and bindings within the cluster,
+# enabling them to delegate specific permissions to other users or groups as needed.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: node-workload-summary
+    app.kubernetes.io/managed-by: kustomize
+  name: workloadsummary-admin-role
+rules:
+- apiGroups:
+  - ux.sean.example.com
+  resources:
+  - workloadsummaries
+  verbs:
+  - '*'
+- apiGroups:
+  - ux.sean.example.com
+  resources:
+  - workloadsummaries/status
+  verbs:
+  - get

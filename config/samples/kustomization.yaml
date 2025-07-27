@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- ux_v1alpha1_nodesummarizer.yaml
+- ux_v1alpha1_nodesummary.yaml
+- ux_v1alpha1_workloadsummarizer.yaml
+- ux_v1alpha1_workloadsummary.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

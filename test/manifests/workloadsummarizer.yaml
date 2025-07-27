@@ -1,0 +1,8 @@
+apiVersion: ux.sean.example.com/v1alpha1
+kind: WorkloadSummarizer
+metadata:
+  name: workloadsummarizer-sample
+spec:
+  workloadTypes:
+  - group: apps
+    kind: Deployment
