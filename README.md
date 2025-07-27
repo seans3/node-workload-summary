@@ -29,7 +29,7 @@ A `NodeSummarizer` (CRD) is created by an administrator to specify how to group 
 
 **`NodeSummarizer` Example:**
 ```yaml
-apiVersion: "ux.k8s.io/v1alpha1"
+apiVersion: "ux.sean.example.com/v1alpha1"
 kind: NodeSummarizer
 metadata:
   name: "nodepool-summarizer"
@@ -40,13 +40,13 @@ spec:
 
 **`NodeSummary` Example:**
 ```yaml
-apiVersion: "ux.k8s.io/v1alpha1"
+apiVersion: "ux.sean.example.com/v1alpha1"
 kind: NodeSummary
 metadata:
   # Name is derived, e.g., nodepool-summarizer-big-tpu-pool
   name: "nodepool-summarizer-big-tpu-pool"
   ownerReferences:
-  - apiVersion: "ux.k8s.io/v1alpha1"
+  - apiVersion: "ux.sean.example.com/v1alpha1"
     kind: NodeSummarizer
     name: "nodepool-summarizer"
 spec:
@@ -74,7 +74,7 @@ A `WorkloadSummarizer` defines which root-level objects are considered "workload
 
 **`WorkloadSummarizer` Example:**
 ```yaml
-apiVersion: "ux.k8s.io/v1alpha1"
+apiVersion: "ux.sean.example.com/v1alpha1"
 kind: WorkloadSummarizer
 metadata:
   name: "ai-workloads"
@@ -91,7 +91,7 @@ spec:
 
 **`WorkloadSummary` Example:**
 ```yaml
-apiVersion: "ux.k8s.io/v1alpha1"
+apiVersion: "ux.sean.example.com/v1alpha1"
 kind: WorkloadSummary
 metadata:
   # Name is derived from the workload instance, e.g., default-train
