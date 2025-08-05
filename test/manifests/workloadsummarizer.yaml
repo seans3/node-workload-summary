@@ -6,3 +6,4 @@ spec:
   workloadTypes:
   - group: apps
     kind: Deployment
+    version: v1

@@ -14,7 +14,17 @@ spec:
     singular: workloadsummary
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.podCount
+      name: N_PODS
+      type: integer
+    - jsonPath: .status.shortType
+      name: SHORT_TYPE
+      type: string
+    - jsonPath: .status.longType
+      name: LONG_TYPE
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: WorkloadSummary is the Schema for the workloadsummaries API

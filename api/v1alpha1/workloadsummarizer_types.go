@@ -33,8 +33,12 @@ type WorkloadSummarizerSpec struct {
 type WorkloadType struct {
 	// Group of the workload type.
 	Group string `json:"group"`
-	// Kind of the workload type.
+	// Kind of the workload.
+	// +kubebuilder:validation:MinLength=1
 	Kind string `json:"kind"`
+	// Version of the workload.
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
 }
 
 // WorkloadSummarizerStatus defines the observed state of WorkloadSummarizer.

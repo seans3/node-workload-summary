@@ -45,6 +45,9 @@ type NodeSummaryRef struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="N_PODS",type="integer",JSONPath=".status.podCount"
+// +kubebuilder:printcolumn:name="SHORT_TYPE",type="string",JSONPath=".status.shortType"
+// +kubebuilder:printcolumn:name="LONG_TYPE",type="string",JSONPath=".status.longType"
 
 // WorkloadSummary is the Schema for the workloadsummaries API
 type WorkloadSummary struct {

@@ -384,8 +384,9 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 				Spec: uxv1alpha1.WorkloadSummarizerSpec{
 					WorkloadTypes: []uxv1alpha1.WorkloadType{
 						{
-							Group: "apps",
-							Kind:  "Deployment",
+							Group:   "apps",
+							Kind:    "Deployment",
+							Version: "v1",
 						},
 					},
 				},
