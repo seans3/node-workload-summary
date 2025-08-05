@@ -304,7 +304,7 @@ var _ = Describe("Manager", Ordered, func() {
 				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-deployment", "-o", "jsonpath={.status.longType}")
 				output, err = utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("apps/v1.Deployment"))
+				g.Expect(output).To(Equal("apps.v1.Deployment"))
 			}
 			Eventually(verifyWorkloadSummary).Should(Succeed())
 		})

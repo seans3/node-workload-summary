@@ -19,10 +19,12 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -64,26 +66,46 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	var replicaSets appsv1.ReplicaSetList
-	if err := r.List(ctx, &replicaSets, client.InNamespace(req.Namespace)); err != nil {
-		log.Error(err, "unable to list replica sets")
-		return ctrl.Result{}, err
+	gvkString, ok := workloadSummary.Annotations["ux.sean.example.com/workload-gvk"]
+	if !ok {
+		log.Info("WorkloadSummary is missing GVK annotation, requeueing", "name", workloadSummary.Name)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	var ownedPods []corev1.Pod
-	for _, rs := range replicaSets.Items {
-		for _, ownerRef := range rs.OwnerReferences {
-			if ownerRef.Name == workloadSummary.Name && ownerRef.Kind == "Deployment" {
-				var pods corev1.PodList
-				podSelector := labels.SelectorFromSet(rs.Spec.Selector.MatchLabels)
-				if err := r.List(ctx, &pods, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: podSelector}); err != nil {
-					log.Error(err, "unable to list pods")
-					return ctrl.Result{}, err
-				}
-				ownedPods = append(ownedPods, pods.Items...)
-			}
-		}
+	gvk, err := parseGVK(gvkString)
+	if err != nil {
+		log.Error(err, "unable to parse GVK from annotation", "gvk", gvkString)
+		return ctrl.Result{}, nil
 	}
+
+	workload := &unstructured.Unstructured{}
+	workload.SetGroupVersionKind(gvk)
+	if err := r.Get(ctx, req.NamespacedName, workload); err != nil {
+		log.Error(err, "unable to fetch workload object", "gvk", gvk, "name", req.NamespacedName)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	selectorMap, found, err := unstructured.NestedMap(workload.Object, "spec", "selector")
+	if err != nil || !found {
+		log.Error(err, "unable to get pod selector from workload", "workload", workload.GetName())
+		return ctrl.Result{}, nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels:      toStringMap(selectorMap["matchLabels"]),
+		MatchExpressions: toLabelSelectorRequirementSlice(selectorMap["matchExpressions"]),
+	})
+	if err != nil {
+		log.Error(err, "unable to create selector from map", "selectorMap", selectorMap)
+		return ctrl.Result{}, nil
+	}
+
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		log.Error(err, "unable to list pods")
+		return ctrl.Result{}, err
+	}
+	ownedPods := pods.Items
 	log.Info("Found owned pods", "count", len(ownedPods))
 
 	workloadSummary.Status.PodCount = len(ownedPods)
@@ -115,23 +137,16 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		})
 	}
 
-	var summarizerList uxv1alpha1.WorkloadSummarizerList
-	if err := r.List(ctx, &summarizerList); err != nil {
-		log.Error(err, "unable to list WorkloadSummarizers")
-		return ctrl.Result{}, err
-	}
-
-	if len(summarizerList.Items) > 0 {
-		summarizer := summarizerList.Items[0]
-		var deployment appsv1.Deployment
-		if err := r.Get(ctx, req.NamespacedName, &deployment); err == nil {
-			for _, wt := range summarizer.Spec.WorkloadTypes {
-				if wt.Kind == "Deployment" {
-					workloadSummary.Status.ShortType = "dep"
-					workloadSummary.Status.LongType = "apps/v1.Deployment"
-				}
-			}
-		}
+	workloadSummary.Status.LongType = gvk.Group + "." + gvk.Version + "." + gvk.Kind
+	switch gvk.Kind {
+	case "Deployment":
+		workloadSummary.Status.ShortType = "dep"
+	case "StatefulSet":
+		workloadSummary.Status.ShortType = "sts"
+	case "DaemonSet":
+		workloadSummary.Status.ShortType = "ds"
+	default:
+		workloadSummary.Status.ShortType = strings.ToLower(gvk.Kind)
 	}
 
 	if err := r.Status().Update(ctx, &workloadSummary); err != nil {
@@ -141,6 +156,22 @@ func (r *WorkloadSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	log.Info("Reconciled WorkloadSummary", "name", workloadSummary.Name)
 	return ctrl.Result{}, nil
+}
+
+func parseGVK(gvkString string) (schema.GroupVersionKind, error) {
+	parts := strings.Split(gvkString, ", Kind=")
+	if len(parts) != 2 {
+		return schema.GroupVersionKind{}, fmt.Errorf("invalid GVK string format: %s", gvkString)
+	}
+	// now we have to check for extra parts
+	if strings.Contains(parts[1], ",") {
+		return schema.GroupVersionKind{}, fmt.Errorf("invalid GVK string format: %s", gvkString)
+	}
+	gv, err := schema.ParseGroupVersion(parts[0])
+	if err != nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("invalid GroupVersion string: %s", parts[0])
+	}
+	return gv.WithKind(parts[1]), nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -249,4 +280,56 @@ func getObjectFromRef(ctx context.Context, k8sClient client.Client, ref *metav1.
 	}, owner)
 
 	return owner, err
+}
+
+func toStringMap(in interface{}) map[string]string {
+	if in == nil {
+		return nil
+	}
+	m, ok := in.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	res := make(map[string]string)
+	for k, v := range m {
+		s, ok := v.(string)
+		if ok {
+			res[k] = s
+		}
+	}
+	return res
+}
+
+func toLabelSelectorRequirementSlice(in interface{}) []metav1.LabelSelectorRequirement {
+	if in == nil {
+		return nil
+	}
+	s, ok := in.([]interface{})
+	if !ok {
+		return nil
+	}
+	res := make([]metav1.LabelSelectorRequirement, len(s))
+	for i, v := range s {
+		m, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		req := metav1.LabelSelectorRequirement{}
+		if key, ok := m["key"].(string); ok {
+			req.Key = key
+		}
+		if op, ok := m["operator"].(string); ok {
+			req.Operator = metav1.LabelSelectorOperator(op)
+		}
+		if values, ok := m["values"].([]interface{}); ok {
+			req.Values = make([]string, len(values))
+			for j, val := range values {
+				if sval, ok := val.(string); ok {
+					req.Values[j] = sval
+				}
+			}
+		}
+		res[i] = req
+	}
+	return res
 }

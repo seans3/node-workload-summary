@@ -371,6 +371,9 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
 					Namespace: "default",
+					Annotations: map[string]string{
+						"ux.sean.example.com/workload-gvk": "apps/v1, Kind=Deployment",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, workloadSummary)).To(Succeed())
@@ -422,7 +425,7 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 				return workloadSummary.Status.PodCount, nil
 			}, "10s", "1s").Should(Equal(3))
 			Expect(workloadSummary.Status.ShortType).To(Equal("dep"))
-			Expect(workloadSummary.Status.LongType).To(Equal("apps/v1.Deployment"))
+			Expect(workloadSummary.Status.LongType).To(Equal("apps.v1.Deployment"))
 		})
 	})
 })

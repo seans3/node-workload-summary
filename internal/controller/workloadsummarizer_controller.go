@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +43,7 @@ type WorkloadSummarizerReconciler struct {
 //+kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch
 //+kubebuilder:rbac:groups=ux.sean.example.com,resources=workloadsummarizers,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-//+kubebuilder:rbac:groups=ux.sean.example.com,resources=workloadsummaries,verbs=create
+//+kubebuilder:rbac:groups=ux.sean.example.com,resources=workloadsummaries,verbs=create;update
 //+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
@@ -71,19 +70,43 @@ func (r *WorkloadSummarizerReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 
 		for _, item := range list.Items {
-			workloadSummary := &uxv1alpha1.WorkloadSummary{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      item.GetName(),
-					Namespace: item.GetNamespace(),
-				},
-			}
+			gvk := item.GroupVersionKind()
+			workloadSummary := &uxv1alpha1.WorkloadSummary{}
+			err := r.Get(ctx, types.NamespacedName{Name: item.GetName(), Namespace: item.GetNamespace()}, workloadSummary)
+			if err != nil {
+				if client.IgnoreNotFound(err) != nil {
+					logger.Error(err, "unable to fetch WorkloadSummary")
+					return ctrl.Result{}, err
+				}
+				// Not found, create it.
+				workloadSummary = &uxv1alpha1.WorkloadSummary{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      item.GetName(),
+						Namespace: item.GetNamespace(),
+						Annotations: map[string]string{
+							"ux.sean.example.com/workload-gvk": gvk.String(),
+						},
+					},
+				}
 
-			logger.Info("Creating WorkloadSummary if it does not exist", "name", workloadSummary.Name)
-			if err := r.Create(ctx, workloadSummary); err != nil && !apierrors.IsAlreadyExists(err) {
-				logger.Error(err, "unable to create WorkloadSummary")
-				return ctrl.Result{}, err
-			} else if err == nil {
-				logger.Info("Created WorkloadSummary", "name", workloadSummary.Name)
+				logger.Info("Creating WorkloadSummary", "name", workloadSummary.Name)
+				if err := r.Create(ctx, workloadSummary); err != nil {
+					logger.Error(err, "unable to create WorkloadSummary")
+					return ctrl.Result{}, err
+				}
+			} else {
+				// Found, check for annotation and update if needed.
+				if workloadSummary.Annotations == nil {
+					workloadSummary.Annotations = make(map[string]string)
+				}
+				if workloadSummary.Annotations["ux.sean.example.com/workload-gvk"] != gvk.String() {
+					workloadSummary.Annotations["ux.sean.example.com/workload-gvk"] = gvk.String()
+					logger.Info("Updating WorkloadSummary with GVK annotation", "name", workloadSummary.Name)
+					if err := r.Update(ctx, workloadSummary); err != nil {
+						logger.Error(err, "unable to update WorkloadSummary")
+						return ctrl.Result{}, err
+					}
+				}
 			}
 		}
 	}
