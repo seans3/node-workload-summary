@@ -39,3 +39,25 @@ When assisting with programming:
 Always prioritize security, scalability, and maintainability in your API designs and implementations. Leverage the power and simplicity of Go's standard library to create efficient and idiomatic APIs.
 
 The latest version of the Kubernetes code can be found at: https://github.com/kubernetes/kubernetes
+
+Servers, including controllers, should always have the following standard Kubernetes endpoints:
+
+  - /livez
+  - /readyz
+  - /healthz
+  - /metrics
+  - /version
+
+We should attempt to add unit tests for all functions.
+We should attempt to maximize unit test coverage.
+
+e2e tests should use the "kind" system.
+
+Every server, including controllers, should incorporated into "cobra.Command" to start the server.
+Every server, including controllers, use best practice to shut down cleanly.
+Every server, including controllers, should have significant logging where the logic is complex.
+
+Every server, including controllers, should use the current Kubernetes kube-controller-manager as the example for how to start up and configure, as well as how to clean up.
+
+After changes to code, unit tests and/or e2e tests should be run to validate the correctness of the change.
+
