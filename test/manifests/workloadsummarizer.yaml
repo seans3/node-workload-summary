@@ -7,3 +7,9 @@ spec:
   - group: apps
     kind: Deployment
     version: v1
+  - group: apps
+    kind: StatefulSet
+    version: v1
+  - group: apps
+    kind: DaemonSet
+    version: v1

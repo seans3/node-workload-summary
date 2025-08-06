@@ -308,6 +308,73 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 			Eventually(verifyWorkloadSummary).Should(Succeed())
 		})
+
+		It("should be created for a new StatefulSet", func() {
+			By("creating a WorkloadSummarizer to track StatefulSets")
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating a headless service for the StatefulSet")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/statefulset-service.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating an nginx StatefulSet")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/statefulset.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the WorkloadSummary is created")
+			verifyWorkloadSummary := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "workloadsummary", "nginx-statefulset", "-o", "jsonpath={.status.podCount}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("3"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-statefulset", "-o", "jsonpath={.status.shortType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("sts"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-statefulset", "-o", "jsonpath={.status.longType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("apps.v1.StatefulSet"))
+			}
+			Eventually(verifyWorkloadSummary).Should(Succeed())
+		})
+
+		It("should be created for a new DaemonSet", func() {
+			By("creating a WorkloadSummarizer to track DaemonSets")
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating an nginx DaemonSet")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/daemonset.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the WorkloadSummary is created")
+			verifyWorkloadSummary := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "workloadsummary", "nginx-daemonset", "-o", "jsonpath={.status.podCount}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("1"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-daemonset", "-o", "jsonpath={.status.shortType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("ds"))
+
+				cmd = exec.Command("kubectl", "get", "workloadsummary", "nginx-daemonset", "-o", "jsonpath={.status.longType}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("apps.v1.DaemonSet"))
+			}
+			Eventually(verifyWorkloadSummary).Should(Succeed())
+		})
 	})
 })
 

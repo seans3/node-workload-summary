@@ -486,6 +486,15 @@ var _ = Describe("NodeSummarizer Reconciler", func() {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: "test-nodesummarizer-test-node", Namespace: "default"}, nodeSummary)
 			}, "10s", "1s").Should(Succeed())
 		})
+
+		It("should set up with the manager", func() {
+			controllerReconciler := &NodeSummarizerReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			err := controllerReconciler.SetupWithManager(nil)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 })
 
@@ -560,6 +569,15 @@ var _ = Describe("NodeSummary Reconciler", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should set up with the manager", func() {
+			controllerReconciler := &NodeSummaryReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			err := controllerReconciler.SetupWithManager(nil)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })
