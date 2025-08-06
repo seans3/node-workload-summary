@@ -278,15 +278,35 @@ var _ = Describe("Manager", Ordered, func() {
 	})
 
 	Context("WorkloadSummary", func() {
-		It("should be created for a new Deployment", func() {
-			By("creating a WorkloadSummarizer to track Deployments")
+		BeforeEach(func() {
+			By("creating a WorkloadSummarizer to track workloads")
 			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+		})
 
+		AfterEach(func() {
+			By("cleaning up the resources")
+			// Use delete with --ignore-not-found for idempotency
+			cmd := exec.Command("kubectl", "delete", "deployment", "nginx-deployment", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "statefulset", "nginx-statefulset", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "daemonset", "nginx-daemonset", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "service", "nginx", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			// Also delete the PVCs created by the statefulset
+			cmd = exec.Command("kubectl", "delete", "pvc", "-l", "app=nginx-statefulset", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "-f", "test/manifests/workloadsummarizer.yaml", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should be created for a new Deployment", func() {
 			By("creating an nginx Deployment")
-			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/deployment.yaml")
-			_, err = utils.Run(cmd)
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/deployment.yaml")
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("verifying the WorkloadSummary is created")
@@ -310,14 +330,9 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should be created for a new StatefulSet", func() {
-			By("creating a WorkloadSummarizer to track StatefulSets")
-			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
 			By("creating a headless service for the StatefulSet")
-			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/statefulset-service.yaml")
-			_, err = utils.Run(cmd)
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/statefulset-service.yaml")
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("creating an nginx StatefulSet")
@@ -346,14 +361,9 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should be created for a new DaemonSet", func() {
-			By("creating a WorkloadSummarizer to track DaemonSets")
-			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
 			By("creating an nginx DaemonSet")
-			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/daemonset.yaml")
-			_, err = utils.Run(cmd)
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/daemonset.yaml")
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("verifying the WorkloadSummary is created")
@@ -372,6 +382,57 @@ var _ = Describe("Manager", Ordered, func() {
 				output, err = utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(Equal("apps.v1.DaemonSet"))
+			}
+			Eventually(verifyWorkloadSummary).Should(Succeed())
+		})
+	})
+
+	Context("WorkloadSummary in a new namespace", func() {
+		const testNamespace = "test-namespace"
+
+		BeforeEach(func() {
+			By("creating a new namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			By("deleting the workload in the new namespace")
+			cmd := exec.Command("kubectl", "delete", "deployment", "nginx-deployment", "-n", testNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+
+			By("deleting the new namespace")
+			cmd = exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the namespace to be deleted")
+			verifyNamespaceDeleted := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ns", testNamespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred()) // Error means it's not found
+			}
+			Eventually(verifyNamespaceDeleted).Should(Succeed())
+		})
+
+		It("should be created in the same namespace as the workload", func() {
+			By("creating a WorkloadSummarizer to track Deployments")
+			cmd := exec.Command("kubectl", "apply", "-f", "test/manifests/workloadsummarizer.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating an nginx Deployment in the new namespace")
+			cmd = exec.Command("kubectl", "apply", "-f", "test/manifests/deployment.yaml", "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the WorkloadSummary is created in the new namespace")
+			verifyWorkloadSummary := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "workloadsummary", "nginx-deployment", "-n", testNamespace, "-o", "jsonpath={.metadata.namespace}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(testNamespace))
 			}
 			Eventually(verifyWorkloadSummary).Should(Succeed())
 		})
