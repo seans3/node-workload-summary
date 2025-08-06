@@ -400,6 +400,7 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 		AfterEach(func() {
 			By("cleaning up the resources")
 			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.WorkloadSummary{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.WorkloadSummarizer{}, client.InNamespace("default"))).To(Succeed())
 			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace("default"), client.MatchingLabels{"app": "test"})).To(Succeed())
 			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace("default"))).To(Succeed())
 			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.Deployment{}, client.InNamespace("default"))).To(Succeed())
@@ -426,6 +427,226 @@ var _ = Describe("WorkloadSummary Reconciler", func() {
 			}, "10s", "1s").Should(Equal(3))
 			Expect(workloadSummary.Status.ShortType).To(Equal("dep"))
 			Expect(workloadSummary.Status.LongType).To(Equal("apps.v1.Deployment"))
+		})
+	})
+})
+
+var _ = Describe("NodeSummarizer Reconciler", func() {
+	Context("When reconciling a NodeSummarizer", func() {
+		const resourceName = "test-nodesummarizer"
+		ctx := context.Background()
+		typeNamespacedName := types.NamespacedName{
+			Name:      resourceName,
+			Namespace: "default",
+		}
+
+		BeforeEach(func() {
+			By("creating a Node")
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-node",
+					Labels: map[string]string{"kubernetes.io/hostname": "test-node"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+
+			By("creating a NodeSummarizer")
+			nodeSummarizer := &uxv1alpha1.NodeSummarizer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: uxv1alpha1.NodeSummarizerSpec{
+					LabelKey: "kubernetes.io/hostname",
+				},
+			}
+			Expect(k8sClient.Create(ctx, nodeSummarizer)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			By("cleaning up the resources")
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.NodeSummary{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.NodeSummarizer{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Node{})).To(Succeed())
+		})
+
+		It("should create a NodeSummary for a matching node", func() {
+			controllerReconciler := &NodeSummarizerReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			nodeSummary := &uxv1alpha1.NodeSummary{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: "test-nodesummarizer-test-node", Namespace: "default"}, nodeSummary)
+			}, "10s", "1s").Should(Succeed())
+		})
+	})
+})
+
+var _ = Describe("NodeSummary Reconciler", func() {
+	Context("When reconciling a NodeSummary", func() {
+		const resourceName = "test-nodesummary"
+		ctx := context.Background()
+		typeNamespacedName := types.NamespacedName{
+			Name:      resourceName,
+			Namespace: "default",
+		}
+
+		BeforeEach(func() {
+			By("creating a Node")
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-node",
+					Labels: map[string]string{"kubernetes.io/hostname": "test-node"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+
+			By("creating Pods on the node")
+			for i := 0; i < 2; i++ {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("test-pod-%d", i),
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "test-node",
+						Containers: []corev1.Container{
+							{
+								Name:  "test",
+								Image: "nginx",
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+			}
+
+			By("creating a NodeSummary")
+			nodeSummary := &uxv1alpha1.NodeSummary{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: uxv1alpha1.NodeSummarySpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"kubernetes.io/hostname": "test-node"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, nodeSummary)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			By("cleaning up the resources")
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.NodeSummary{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Pod{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Node{})).To(Succeed())
+		})
+
+		It("should correctly count the pods on the node", func() {
+			controllerReconciler := &NodeSummaryReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+})
+
+var _ = Describe("WorkloadSummarizer Reconciler", func() {
+	Context("When reconciling a WorkloadSummarizer", func() {
+		const resourceName = "test-workloadsummarizer"
+		ctx := context.Background()
+		typeNamespacedName := types.NamespacedName{
+			Name:      resourceName,
+			Namespace: "default",
+		}
+
+		BeforeEach(func() {
+			By("creating a Deployment")
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-deployment",
+					Namespace: "default",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: func() *int32 { i := int32(1); return &i }(),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "test"},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{"app": "test"},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "test",
+									Image: "nginx",
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
+
+			By("creating a WorkloadSummarizer")
+			workloadSummarizer := &uxv1alpha1.WorkloadSummarizer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: uxv1alpha1.WorkloadSummarizerSpec{
+					WorkloadTypes: []uxv1alpha1.WorkloadType{
+						{
+							Group:   "apps",
+							Kind:    "Deployment",
+							Version: "v1",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, workloadSummarizer)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			By("cleaning up the resources")
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.WorkloadSummary{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &uxv1alpha1.WorkloadSummarizer{}, client.InNamespace("default"))).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.Deployment{}, client.InNamespace("default"))).To(Succeed())
+		})
+
+		It("should create a WorkloadSummary for the deployment", func() {
+			controllerReconciler := &WorkloadSummarizerReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			workloadSummary := &uxv1alpha1.WorkloadSummary{}
+			Eventually(func() map[string]string {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-deployment", Namespace: "default"}, workloadSummary)
+				if err != nil {
+					return nil
+				}
+				return workloadSummary.Annotations
+			}, "10s", "1s").Should(HaveKeyWithValue("ux.sean.example.com/workload-gvk", "apps/v1, Kind=Deployment"))
 		})
 	})
 })

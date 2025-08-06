@@ -29,6 +29,7 @@ type NodeSummarySpec struct {
 
 // NodeSummaryStatus defines the observed state of NodeSummary.
 type NodeSummaryStatus struct {
+	PodCount        int                 `json:"podCount"`
 	NodeCount       int                 `json:"nodeCount"`
 	NodeNamesPrefix string              `json:"nodeNamesPrefix"`
 	Conditions      []metav1.Condition  `json:"conditions,omitempty"`

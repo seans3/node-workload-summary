@@ -160,9 +160,12 @@ spec:
                 type: integer
               nodeNamesPrefix:
                 type: string
+              podCount:
+                type: integer
             required:
             - nodeCount
             - nodeNamesPrefix
+            - podCount
             type: object
         type: object
     served: true

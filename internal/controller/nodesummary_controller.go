@@ -60,10 +60,31 @@ func (r *NodeSummaryReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Error(err, "unable to convert selector")
 		return ctrl.Result{}, err
 	}
+	selector, err = metav1.LabelSelectorAsSelector(nodeSummary.Spec.Selector)
+	if err != nil {
+		log.Error(err, "unable to convert selector")
+		return ctrl.Result{}, err
+	}
 	if err := r.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		log.Error(err, "unable to list nodes")
 		return ctrl.Result{}, err
 	}
+
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods); err != nil {
+		log.Error(err, "unable to list pods")
+		return ctrl.Result{}, err
+	}
+
+	podCount := 0
+	for _, pod := range pods.Items {
+		for _, node := range nodes.Items {
+			if pod.Spec.NodeName == node.Name {
+				podCount++
+			}
+		}
+	}
+	nodeSummary.Status.PodCount = podCount
 
 	log.Info("Found nodes for NodeSummary", "count", len(nodes.Items))
 	nodeSummary.Status.NodeCount = len(nodes.Items)
